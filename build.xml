@@ -1,0 +1,37 @@
+<project basedir=".">
+
+    <property name="main" value="Scratch"/>
+    <property name="serial_port" value="COM4"/>
+
+    <target name="clean">
+        <delete dir="out"/>
+        <delete dir="." includes="*.class"/>
+    </target>
+
+    <path id="classpath">
+        <fileset dir="../../lib">
+            <include name="*.jar"/>
+        </fileset>
+        <pathelement location="."/>
+    </path>
+
+    <target name="compile" depends="clean">
+        <javac includeantruntime="false" target="1.1" source="1.3" includes="ScratchCompiler.java" srcdir="." destdir="." classpathref="classpath"/>
+        <java classpathref="classpath" classname="ScratchCompiler"/>
+        <javac includeantruntime="false" target="1.1" source="1.3" excludes="ScratchCompiler.java" srcdir="." destdir="." classpathref="classpath"/>
+    </target>
+
+    <target name="download" depends="compile">
+        <exec executable="../../bin/lejos.exe">
+            <env key="RCXTTY" value="${serial_port}"/>
+            <arg value="${main}"/>
+        </exec>
+        <antcall target="clean"/>
+    </target>
+
+    <target name="firmware" depends="clean">
+        <exec executable="../../bin/lejosfirmdl.exe">
+            <env key="RCXTTY" value="${serial_port}"/>
+        </exec>
+    </target>
+</project>
