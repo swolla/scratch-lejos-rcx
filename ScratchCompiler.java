@@ -1,6 +1,11 @@
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.PrintWriter;
 import java.text.CharacterIterator;
 import java.text.StringCharacterIterator;
 import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 public class ScratchCompiler {
     public static void main(String[] args) {
@@ -8,13 +13,177 @@ public class ScratchCompiler {
     }
 
     public void run() {
-        // Read JSON from sb3 (which is a ZIP file)
-        //       parse using stringtree JSON (below)
-        // Generate ScratchProject.java class
-        //       pretty-print JSON in comment for reference
-        // Generate methods from non-stage targets
+        String json = readSB3();
+        Map project = (Map) read(json);
+        try {
+            PrintWriter java = new PrintWriter("ScratchProject.java");
+            addJSONComment(java, json);
+            compileClass(java, project);
+            java.close();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private void addJSONComment(PrintWriter java, String json) {
+        java.write("/**");
+        String indent = "";
+        boolean inString = false;
+        char last = ' ';
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (inString) {
+                java.write(c);
+                if (c == '"' && last != '\\') {
+                    inString = false;
+                }
+            } else {
+                if (c == '{' || c == '[') {
+                    indent += "    ";
+                    java.write("\n * " + indent + c + ' ');
+                } else if (c == ',') {
+                    java.write("\n * " + indent + c + ' ');
+                } else if (c == '}' || c == ']') {
+                    java.write("\n * " + indent + c);
+                    indent = indent.substring(4);
+                } else if (c == '"') {
+                    inString = true;
+                    java.write(c);
+                } else {
+                    java.write(c);
+                }
+            }
+            last = c;
+        }
+        java.write("\n */\n");
+    }
+
+    private String readSB3() {
+        try {
+            ZipFile zipFile = new ZipFile("Scratchproject.sb3");
+            ZipEntry zipEntry = zipFile.getEntry("project.json");
+            InputStream inputStream = zipFile.getInputStream(zipEntry);
+            Scanner scanner = new Scanner(inputStream, "UTF-8");
+            return scanner.useDelimiter("\\A").next();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    private void compileClass(PrintWriter java, Map project) {
+        java.write("public final class ScratchProject extends ScratchAdapter {\n");
+        List targets = getList(project, "targets");
+        for (int i = 0; i < targets.size(); i++) {
+            Map target = (Map) targets.get(i);
+            Boolean isStage = getBoolean(target, "isStage");
+            if (!isStage.booleanValue()) {
+                compileMethods(java, target);
+            }
+        }
         // Generate statements from blocks
         //       call Motion and Control classes
+        java.write("}\n");
+    }
+
+    private void compileMethods(PrintWriter java, Map target) {
+        Map blocks = getMap(target, "blocks");
+        Iterator iterator = blocks.values().iterator();
+        while (iterator.hasNext()) {
+            Map block = (Map) iterator.next();
+            String opcode = getString(block, "opcode");
+            Boolean topLevel = getBoolean(block, "topLevel");
+            if (topLevel.booleanValue()) {
+                if ("event_whenbroadcastreceived".equals(opcode)) {
+                    String name = getString(block, "fields BROADCAST_OPTION<0>");
+                    java.write("    public final void " + name + "() {\n");
+                    String next = getString(block, "next");
+                    while (next != null) {
+                        next = compileStatement(java, (Map) blocks.get(next));
+                    }
+                    java.write("    }\n");
+                } else {
+                    System.err.println("Unsupported opcode: " + opcode);
+                }
+            }
+        }
+    }
+
+    private String compileStatement(PrintWriter java, Map block) {
+        String opcode = getString(block, "opcode");
+        if ("motion_movesteps".equals(opcode)) {
+            Float steps = getFloat(block, "inputs STEPS<1><1>");
+            java.write("        Motion.moveSteps("+steps+"f);\n");
+        } else if ("motion_turnright".equals(opcode)) {
+            Float degrees = getFloat(block, "inputs DEGREES<1><1>");
+            java.write("        Motion.turnRight("+degrees+"f);\n");
+        } else if ("motion_turnleft".equals(opcode)) {
+            Float degrees = getFloat(block, "inputs DEGREES<1><1>");
+            java.write("        Motion.turnLeft("+degrees+"f);\n");
+        } else if ("control_stop".equals(opcode)) {
+            String option = getString(block, "fields STOP_OPTION<0>");
+            java.write("        Control.stop("+q(option)+");\n");
+        } else {
+            System.err.println("Unsupported opcode: " + opcode);
+        }
+        return getString(block, "next");
+    }
+
+    private String q(String s) {
+        return s == null ? s : '"' + s + '"';
+    }
+
+    private Map getMap(Object object, String path) {
+        return (Map) get(object, path);
+    }
+
+    private List getList(Object object, String path) {
+        return (List) get(object, path);
+    }
+
+    private String getString(Object object, String path) {
+        Object o = get(object, path);
+        return (String) o;
+    }
+
+    private Boolean getBoolean(Object object, String path) {
+        Object o = get(object, path);
+        return o instanceof String ? Boolean.valueOf((String) o) : (Boolean) o;
+    }
+
+    private Float getFloat(Object object, String path) {
+        Object o = get(object, path);
+        return o instanceof String ? Float.valueOf((String) o) : (Float) o;
+    }
+
+    private Integer getInteger(Object object, String path) {
+        Object o = get(object, path);
+        return o instanceof String ? Integer.valueOf((String) o) : (Integer) o;
+    }
+
+    private Object get(Object object, String path) {
+        if (path == null || path.trim().length() == 0) {
+            return object;
+        }
+        int i = 1;
+        while (i < path.length() && path.charAt(i) != '<' && path.charAt(i) != ' ') {
+            i++;
+            if (path.charAt(i-1)=='>') {
+                break;
+            }
+        }
+        String part = path.substring(0, i);
+        String rest = path.substring(i < path.length() && path.charAt(i) == ' ' ? i + 1 : i);
+        if (object instanceof List && part.length() == 3 && part.charAt(0) == '<' && part.charAt(2) == '>') {
+            int index = Integer.parseInt(part.substring(1, part.length()-1));
+            List list = (List) object;
+            return get(list.get(index), rest);
+        } else if (object instanceof Map) {
+            Map map = (Map) object;
+            return get(map.get(part), rest);
+        } else {
+            throw new UnsupportedOperationException("path="+path+";part="+part+";rest="+rest);
+        }
     }
 
     protected static final Object OBJECT_END = new Object();
@@ -25,7 +194,7 @@ public class ScratchCompiler {
     public static final int CURRENT = 1;
     public static final int NEXT = 2;
 
-    protected static Map<Character, Character> escapes = new HashMap();
+    protected static Map escapes = new HashMap();
     static {
         escapes.put(Character.valueOf('"'), Character.valueOf('"'));
         escapes.put(Character.valueOf('\\'), Character.valueOf('\\'));
