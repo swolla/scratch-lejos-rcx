@@ -7,10 +7,10 @@ public class Motion {
 
     public static void moveSteps(float steps) {
         if (steps > 0) {
-            Motor.A.setPower(1);
+            Motor.A.setPower(2);
             Motor.A.forward();
-            Motor.C.setPower(1);
-            Motor.A.forward();
+            Motor.C.setPower(2);
+            Motor.C.forward();
 
             try {
                 Thread.sleep(Math.round(100 * steps));
@@ -28,10 +28,10 @@ public class Motion {
             Motor.A.setPower(MAX_POWER);
             Motor.A.forward();
             Motor.C.setPower(MAX_POWER);
-            Motor.A.backward();
+            Motor.C.backward();
 
             try {
-                Thread.sleep(Math.round(100 * degrees));
+                Thread.sleep(Math.round(10 * degrees));
             } catch (Exception ex) {
                 Sound.buzz();
             }
@@ -46,10 +46,10 @@ public class Motion {
             Motor.A.setPower(MAX_POWER);
             Motor.A.backward();
             Motor.C.setPower(MAX_POWER);
-            Motor.A.forward();
+            Motor.C.forward();
 
             try {
-                Thread.sleep(Math.round(100 * degrees));
+                Thread.sleep(Math.round(10 * degrees));
             } catch (Exception ex) {
                 Sound.buzz();
             }
